@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Delete, LayoutDashboard, Lock, Monitor, Quote, Truck as TruckIcon, Users } from "lucide-react";
-import type { AppState, Driver, Truck } from "@/lib/types";
+import type { Driver, Truck } from "@/lib/types";
+import { lock, unlock, type Board } from "@/lib/store";
 import { totals } from "@/lib/logic";
 import { SW } from "./ui";
 import Overview from "./Overview";
@@ -11,38 +12,48 @@ import SettingsPage from "./SettingsPage";
 import TruckDialog from "./TruckDialog";
 import DriverDialog from "./DriverDialog";
 
-const UNLOCK_KEY = "royce-admin-unlocked";
 type Page = "overview" | "trucks" | "drivers" | "settings";
 
-function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }) {
+function PinGate({ showHint }: { showHint: boolean }) {
   const [entry, setEntry] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const press = useCallback((k: string) => {
-    setError(false);
+    setError(null);
     setEntry((e) => (k === "back" ? e.slice(0, -1) : (e + k).slice(0, 4)));
   }, []);
 
   useEffect(() => {
     if (entry.length < 4) return;
-    const t = setTimeout(() => {
-      if (entry === pin) onUnlock();
-      else {
-        setError(true);
+    let live = true;
+    setBusy(true);
+    unlock(entry)
+      .then((ok) => {
+        if (!live || ok) return;
+        setError("Wrong PIN — try again");
         setEntry("");
-      }
-    }, 150);
-    return () => clearTimeout(t);
-  }, [entry, pin, onUnlock]);
+      })
+      .catch(() => {
+        if (!live) return;
+        setError("Could not reach the server");
+        setEntry("");
+      })
+      .finally(() => live && setBusy(false));
+    return () => {
+      live = false;
+    };
+  }, [entry]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (/^\d$/.test(e.key)) press(e.key);
+      if (busy) return;
+      if (/^d$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") press("back");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [press]);
+  }, [press, busy]);
 
   return (
     <div className="pin-screen">
@@ -59,58 +70,32 @@ function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }) {
             <span key={i} className={i < entry.length ? "on" : ""} />
           ))}
         </div>
-        <div className="pin-err">{error ? "Wrong PIN — try again" : ""}</div>
+        <div className="pin-err">{error ?? ""}</div>
         <div className="keypad">
           {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => (
-            <button key={k} onClick={() => press(k)}>
+            <button key={k} onClick={() => press(k)} disabled={busy}>
               {k}
             </button>
           ))}
           <span />
-          <button onClick={() => press("0")}>0</button>
-          <button onClick={() => press("back")} aria-label="Backspace">
+          <button onClick={() => press("0")} disabled={busy}>0</button>
+          <button onClick={() => press("back")} aria-label="Backspace" disabled={busy}>
             <Delete size={24} strokeWidth={SW} />
           </button>
         </div>
-        <div className="pin-hint">Demo PIN: 2468</div>
+        {showHint && <div className="pin-hint">Demo PIN: 2468</div>}
       </div>
     </div>
   );
 }
 
-export default function Admin({ state, openTv }: { state: AppState; openTv: () => void }) {
-  const [unlocked, setUnlocked] = useState(false);
+export default function Admin({ board, openTv }: { board: Board; openTv: () => void }) {
   const [page, setPage] = useState<Page>("overview");
   const [truckEdit, setTruckEdit] = useState<Truck | "new" | null>(null);
   const [driverEdit, setDriverEdit] = useState<Driver | "new" | null>(null);
+  const state = board.state;
 
-  useEffect(() => {
-    try {
-      setUnlocked(sessionStorage.getItem(UNLOCK_KEY) === "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const unlock = useCallback(() => {
-    try {
-      sessionStorage.setItem(UNLOCK_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setUnlocked(true);
-  }, []);
-
-  const lock = () => {
-    try {
-      sessionStorage.removeItem(UNLOCK_KEY);
-    } catch {
-      /* ignore */
-    }
-    setUnlocked(false);
-  };
-
-  if (!unlocked) return <PinGate pin={state.settings.pin} onUnlock={unlock} />;
+  if (board.role !== "admin") return <PinGate showHint={board.pristine} />;
 
   const tot = totals(state);
   const nav: { id: Page; label: string; icon: React.ReactNode; badge?: number }[] = [

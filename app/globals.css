@@ -415,3 +415,24 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-
   .two-col, .grid2, .grid3 { grid-template-columns: 1fr; }
   .page-head h1 { font-size: 32px; }
 }
+
+/* server connection + errors */
+.connecting { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 14px; font-weight: 700; font-size: 18px; color: var(--muted); background: var(--bg); }
+.spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--neutral-300); border-top-color: var(--accent-500); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.net-banner {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 400; display: flex; align-items: center; gap: 8px;
+  background: oklch(.92 .07 70); color: oklch(.38 .1 60); padding: 9px 18px; border-radius: 999px; font-weight: 700; font-size: 14px; box-shadow: var(--shadow);
+}
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 400; display: flex; align-items: center; gap: 10px;
+  background: oklch(.55 .17 25); color: white; padding: 12px 20px; border-radius: 999px; font-weight: 700; font-size: 14px;
+  box-shadow: 0 14px 40px oklch(.3 .1 25 / .35); max-width: calc(100vw - 32px); animation: pop .15s ease-out;
+}
+.doc-file {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--surface); border-radius: 999px; padding: 5px 12px;
+  font-size: 13px; font-weight: 700; color: var(--accent-800); max-width: 220px;
+}
+.doc-file:hover { background: var(--accent-200); }
+.doc-error { font-size: 12px; font-weight: 700; color: oklch(.5 .17 25); max-width: 200px; }
+.keypad button:disabled { opacity: .5; cursor: default; }

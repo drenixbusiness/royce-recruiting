@@ -59,7 +59,8 @@ export function cycleStatus(id: string) {
   });
 }
 
-export function saveTruck(t: Truck) {
+/** Saves a truck; `driverId` links a pipeline driver to it (taking them out of the pipeline). */
+export function saveTruck(t: Truck, driverId: string | null = null) {
   update((s) => {
     const prev = s.trucks.find((x) => x.id === t.id);
     let truck = t;
@@ -67,6 +68,13 @@ export function saveTruck(t: Truck) {
     if (t.status === "available") {
       truck = { ...t, driverName: "", openedAt: prev && prev.status !== "available" ? now() : t.openedAt };
       drivers = drivers.map((d) => (d.truckId === t.id ? { ...d, truckId: null } : d));
+    } else {
+      const linked = drivers.find((d) => d.id === driverId);
+      if (linked) truck = { ...t, driverName: linked.name };
+      drivers = drivers.map((d) => {
+        if (d.id === driverId) return { ...d, truckId: t.id, lastActivity: d.truckId === t.id ? d.lastActivity : now() };
+        return d.truckId === t.id ? { ...d, truckId: null } : d;
+      });
     }
     return {
       ...s,
@@ -92,7 +100,12 @@ export function saveDriver(d: Driver) {
       stageSince: !prev || prev.stage !== d.stage ? now() : d.stageSince,
       lastActivity: now(),
     };
-    return { ...s, drivers: prev ? s.drivers.map((x) => (x.id === d.id ? driver : x)) : [...s.drivers, driver] };
+    return {
+      ...s,
+      drivers: prev ? s.drivers.map((x) => (x.id === d.id ? driver : x)) : [...s.drivers, driver],
+      // keep the name on their truck in step with a rename
+      trucks: driver.truckId ? s.trucks.map((t) => (t.id === driver.truckId ? { ...t, driverName: driver.name } : t)) : s.trucks,
+    };
   });
 }
 

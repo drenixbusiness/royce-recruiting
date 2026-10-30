@@ -2,12 +2,14 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Truck as TruckIcon, X } from "lucide-react";
 import type { AppState, Crew, PayStructure, Truck, TruckStatus } from "@/lib/types";
-import { resizePhoto } from "@/lib/logic";
+import { resizePhoto, stageLabel } from "@/lib/logic";
 import { deleteTruck, saveTruck } from "@/lib/actions";
 import { uid } from "@/lib/seed";
+import { uploadPhoto } from "@/lib/store";
 import { ConfirmButton, Field, Modal, Seg, SW } from "./ui";
 import { Select } from "./controls";
 
+const OTHER = "__other";
 const PAY: PayStructure[] = ["Per mile", "Percentage", "Weekly guarantee", "Hourly"];
 
 const blank = (): Truck => ({
@@ -33,13 +35,35 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
     if (!t.payRate.trim()) err.payRate = "Driver pay is required";
     setErrors(err);
     if (Object.keys(err).length) return;
-    saveTruck({ ...t, number: t.number.trim(), model: t.model.trim(), location: t.location.trim(), payRate: t.payRate.trim(), driverName: t.driverName.trim() });
+    const linked = driverId && driverId !== OTHER ? driverId : null;
+    saveTruck(
+      { ...t, number: t.number.trim(), model: t.model.trim(), location: t.location.trim(), payRate: t.payRate.trim(), driverName: driverId ? t.driverName.trim() : "" },
+      linked,
+    );
     onClose();
   };
 
+  // drivers still in the pipeline, plus whoever is already on this truck
+  const driverChoices = state.drivers.filter((d) => !d.truckId || d.truckId === t.id);
+  const [driverId, setDriverId] = useState<string>(
+    () => state.drivers.find((d) => d.truckId === t.id)?.id ?? (t.driverName ? OTHER : ""),
+  );
+
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+
   const onPhoto = async (f?: File) => {
     if (!f) return;
-    set("photo", await resizePhoto(f));
+    setPhotoError("");
+    setUploading(true);
+    try {
+      set("photo", await uploadPhoto(await resizePhoto(f)));
+    } catch (e) {
+      setPhotoError(e instanceof Error && e.message ? e.message : "Could not read that image");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   return (
@@ -89,21 +113,35 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
           </div>
         </div>
         {t.status !== "available" && (
-          <Field label="Assigned driver" className="full">
-            <input className="input" style={{ marginTop: 0 }} list="driver-names" value={t.driverName} onChange={(e) => set("driverName", e.target.value)} placeholder="Driver name" />
-            <datalist id="driver-names">
-              {state.drivers.map((d) => (
-                <option key={d.id} value={d.name} />
-              ))}
-            </datalist>
-          </Field>
+          <div className="grid2" style={{ marginTop: 16 }}>
+            <Field label="Assigned driver" group>
+              <Select
+                value={driverId}
+                onChange={(v) => {
+                  setDriverId(v);
+                  const d = state.drivers.find((x) => x.id === v);
+                  set("driverName", d ? d.name : v === OTHER ? t.driverName : "");
+                }}
+                options={[
+                  { value: "", label: "No driver yet" },
+                  ...driverChoices.map((d) => ({ value: d.id, label: d.truckId === t.id ? d.name : `${d.name} · ${stageLabel(d.stage)}` })),
+                  { value: OTHER, label: "Someone not in the pipeline…" },
+                ]}
+              />
+            </Field>
+            {driverId === OTHER && (
+              <Field label="Driver name">
+                <input className="input" value={t.driverName} onChange={(e) => set("driverName", e.target.value)} placeholder="Full name" />
+              </Field>
+            )}
+          </div>
         )}
         <div className="field" style={{ marginTop: 16 }}>
           <span>Photo</span>
           <div className="photo-box">
             <div className="pv">{t.photo ? <img className="photo" src={t.photo} alt="" /> : <TruckIcon size={36} strokeWidth={SW} />}</div>
-            <button type="button" className="btn sm alt" onClick={() => fileRef.current?.click()}>
-              <ImagePlus size={14} strokeWidth={SW} /> {t.photo ? "Replace" : "Upload"}
+            <button type="button" className="btn sm alt" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              <ImagePlus size={14} strokeWidth={SW} /> {uploading ? "Uploading…" : t.photo ? "Replace" : "Upload"}
             </button>
             {t.photo && (
               <button type="button" className="btn sm" onClick={() => set("photo", null)}>
@@ -112,6 +150,7 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
             )}
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
           </div>
+          {photoError && <em className="error">{photoError}</em>}
         </div>
         <div className="dialog-foot">
           {truck && (
@@ -128,7 +167,7 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
             <button type="button" className="btn ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn primary">
+            <button type="submit" className="btn primary" disabled={uploading}>
               Save truck
             </button>
           </div>

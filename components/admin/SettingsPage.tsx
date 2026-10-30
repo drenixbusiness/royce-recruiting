@@ -3,9 +3,9 @@ import { useState } from "react";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { AppState, PaletteId, Settings } from "@/lib/types";
 import { PALETTES, swatchColors } from "@/lib/theme";
-import { resetToDemo, update } from "@/lib/store";
+import { clearBoard, rememberPin, resetToDemo, update } from "@/lib/store";
 import { uid } from "@/lib/seed";
-import { Field, Seg, SW } from "./ui";
+import { ConfirmButton, Field, Seg, SW } from "./ui";
 import { NumberField, Select } from "./controls";
 
 function PaletteLabel({ id }: { id: PaletteId }) {
@@ -42,6 +42,8 @@ export default function SettingsPage({ state }: { state: AppState }) {
   const savePin = () => {
     if (!/^\d{4}$/.test(pin)) return setPinMsg("PIN must be 4 digits");
     setSetting("pin", pin);
+    // the save above is sent with the old PIN; later requests use the new one
+    rememberPin(pin);
     setPinMsg("PIN saved");
   };
 
@@ -108,7 +110,8 @@ export default function SettingsPage({ state }: { state: AppState }) {
               </div>
             </Field>
           </div>
-          <div style={{ marginTop: 22 }}>
+          <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <ConfirmButton label="Start with an empty board" confirmLabel="Click again — removes all trucks & drivers" onConfirm={clearBoard} />
             <button
               className={`btn danger ${armed ? "confirm" : ""}`}
               onClick={() => {

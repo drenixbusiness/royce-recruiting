@@ -23,7 +23,10 @@ export type DocKey = "cdl" | "medical" | "mvr" | "drug" | "application";
 
 export interface DocState {
   done: boolean;
+  /** original file name of the uploaded document */
   file: string | null;
+  /** id of the stored upload, served from /api/files/<id> */
+  fileId?: string | null;
 }
 
 export interface Driver {

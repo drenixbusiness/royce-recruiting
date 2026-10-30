@@ -1,35 +1,62 @@
 "use client";
 import { useRef, useState } from "react";
-import { Paperclip, UserRound } from "lucide-react";
-import type { AppState, DocKey, Driver, StageId } from "@/lib/types";
+import { FileText, Paperclip, UserRound } from "lucide-react";
+import type { AppState, DocKey, DocState, Driver, StageId } from "@/lib/types";
 import { DOCS, STAGES, isReady } from "@/lib/logic";
 import { deleteDriver, saveDriver } from "@/lib/actions";
 import { uid } from "@/lib/seed";
+import { openFile, uploadFile } from "@/lib/store";
 import { ConfirmButton, Field, Modal, ReadyTag, SW } from "./ui";
 import { DatePicker, Select } from "./controls";
 
 const blank = (): Driver => ({
   id: uid("d"), name: "", phone: "", location: "", stage: "contacted", cdlClass: "A", cdlState: "", cdlExpiry: "", startDate: "",
-  docs: Object.fromEntries(DOCS.map((d) => [d.key, { done: false, file: null }])) as Driver["docs"],
+  docs: Object.fromEntries(DOCS.map((d) => [d.key, { done: false, file: null, fileId: null }])) as Driver["docs"],
   followUpDate: "", followUpNote: "", stageSince: new Date().toISOString(), lastActivity: new Date().toISOString(), truckId: null,
 });
 
-function DocRow({ k, label, d, onChange }: { k: DocKey; label: string; d: Driver; onChange: (k: DocKey, done: boolean, file?: string | null) => void }) {
+function DocRow({ k, label, doc, onChange, onBusy }: { k: DocKey; label: string; doc: DocState; onChange: (k: DocKey, doc: DocState) => void; onBusy: (busy: boolean) => void }) {
   const ref = useRef<HTMLInputElement>(null);
-  const doc = d.docs[k];
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const upload = async (f?: File) => {
+    if (!f) return;
+    setError("");
+    setUploading(true);
+    onBusy(true);
+    try {
+      const { id, name } = await uploadFile(f);
+      onChange(k, { done: true, file: name, fileId: id });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      onBusy(false);
+      if (ref.current) ref.current.value = "";
+    }
+  };
+
   return (
     <div className="doc-row">
       <label>
-        <input type="checkbox" checked={doc.done} onChange={(e) => onChange(k, e.target.checked, e.target.checked ? doc.file : null)} />
-        <span className="trunc">
-          {label}
-          {doc.file && <span className="fname"> · {doc.file}</span>}
-        </span>
+        <input
+          type="checkbox"
+          checked={doc.done}
+          onChange={(e) => onChange(k, e.target.checked ? { ...doc, done: true } : { done: false, file: null, fileId: null })}
+        />
+        <span className="trunc">{label}</span>
       </label>
-      <button type="button" className="btn sm" onClick={() => ref.current?.click()}>
-        <Paperclip size={14} strokeWidth={SW} /> {doc.file ? "Replace" : "Upload"}
+      {error && <span className="doc-error trunc">{error}</span>}
+      {doc.fileId && doc.file && (
+        <button type="button" className="doc-file trunc" onClick={() => openFile(doc.fileId!)} title={`Open ${doc.file}`}>
+          <FileText size={14} strokeWidth={SW} /> <span className="trunc">{doc.file}</span>
+        </button>
+      )}
+      <button type="button" className="btn sm" onClick={() => ref.current?.click()} disabled={uploading}>
+        <Paperclip size={14} strokeWidth={SW} /> {uploading ? "Uploading…" : doc.fileId ? "Replace" : "Upload"}
       </button>
-      <input ref={ref} type="file" hidden onChange={(e) => e.target.files?.[0] && onChange(k, true, e.target.files[0].name)} />
+      <input ref={ref} type="file" accept="image/*,.pdf,.doc,.docx,.txt" hidden onChange={(e) => upload(e.target.files?.[0])} />
     </div>
   );
 }
@@ -38,8 +65,9 @@ export default function DriverDialog({ driver, onClose }: { state: AppState; dri
   const [d, setD] = useState<Driver>(() => driver ?? blank());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof Driver>(k: K, v: Driver[K]) => setD((x) => ({ ...x, [k]: v }));
-  const setDoc = (k: DocKey, done: boolean, file?: string | null) =>
-    setD((x) => ({ ...x, docs: { ...x.docs, [k]: { done, file: file === undefined ? x.docs[k].file : file } } }));
+  const setDoc = (k: DocKey, doc: DocState) => setD((x) => ({ ...x, docs: { ...x.docs, [k]: doc } }));
+  const [busy, setBusy] = useState(0);
+  const onBusy = (b: boolean) => setBusy((n) => n + (b ? 1 : -1));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +142,7 @@ export default function DriverDialog({ driver, onClose }: { state: AppState; dri
           <span>Documents</span>
           <div className="list" style={{ gap: 6 }}>
             {DOCS.map((x) => (
-              <DocRow key={x.key} k={x.key} label={x.label} d={d} onChange={setDoc} />
+              <DocRow key={x.key} k={x.key} label={x.label} doc={d.docs[x.key]} onChange={setDoc} onBusy={onBusy} />
             ))}
           </div>
         </div>
@@ -133,7 +161,7 @@ export default function DriverDialog({ driver, onClose }: { state: AppState; dri
             <button type="button" className="btn ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn primary">
+            <button type="submit" className="btn primary" disabled={busy > 0}>
               Save driver
             </button>
           </div>

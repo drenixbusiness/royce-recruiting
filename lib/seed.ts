@@ -42,7 +42,7 @@ const TRUCKS: T[] = [
 
 const ALL: DocKey[] = ["cdl", "medical", "mvr", "drug", "application"];
 const docs = (have: DocKey[]) =>
-  Object.fromEntries(ALL.map((k) => [k, { done: have.includes(k), file: have.includes(k) ? `${k}.pdf` : null }])) as Driver["docs"];
+  Object.fromEntries(ALL.map((k) => [k, { done: have.includes(k), file: null, fileId: null }])) as Driver["docs"];
 
 // name, phone, location, stage, have docs, stageSince days, lastActivity days, followUp offset (null = none), note, start offset
 type D = [string, string, string, StageId, DocKey[], number, number, number | null, string, number];
