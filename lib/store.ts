@@ -59,37 +59,95 @@ function storePin(p: string | null) {
 const auth = (p: string | null = getPin()): Record<string, string> => (p ? { [PIN_HEADER]: p } : {});
 
 let retry: ReturnType<typeof setTimeout> | undefined;
+type Sync = { mode: "sse" } | { mode: "poll"; ms: number };
+let sync: Sync | null = null;
+
+/** Set when the server has no database connected (e.g. a Vercel deploy without Redis); shown as a setup screen. */
+let setupError: string | null = null;
+const setupListeners = new Set<() => void>();
 
 export async function refresh() {
   if (pending > 0) return; // our own save is in flight; we refresh once it lands
   try {
     const r = await fetch("/api/state", { headers: auth(), cache: "no-store" });
-    if (!r.ok) throw new Error(`Server error ${r.status}`);
-    const j = (await r.json()) as { state: AppState; version: number; role: Role; pristine: boolean };
+    const j = (await r.json().catch(() => ({}))) as {
+      state: AppState; version: number; role: Role; pristine: boolean; sync: Sync; error?: string; setup?: boolean;
+    };
+    if (r.status === 503 && j.setup) {
+      setupError = j.error ?? "No database connected";
+      setupListeners.forEach((l) => l());
+      throw new Error(setupError);
+    }
+    if (!r.ok) throw new Error(j.error ?? `Server error ${r.status}`);
+    if (setupError) {
+      setupError = null;
+      setupListeners.forEach((l) => l());
+    }
     if (pending > 0) return;
     if (j.role !== "admin" && getPin()) storePin(null); // PIN was changed elsewhere
     version = j.version;
     board = { state: j.state, role: j.role, online: true, pristine: j.pristine, error: board?.error ?? null };
     emit();
+    if (!sync) startSync(j.sync ?? { mode: "sse" });
   } catch {
     if (board) set({ online: false });
     clearTimeout(retry);
-    retry = setTimeout(refresh, 3000);
+    retry = setTimeout(refresh, setupError ? 10000 : 3000);
   }
+}
+
+/** Follows changes: pushed events from a long-running server, or polling a tiny version check on Vercel. */
+function startSync(s: Sync) {
+  sync = s;
+  if (s.mode === "sse") {
+    const es = new EventSource("/api/events");
+    es.onmessage = (e) => {
+      const v = (JSON.parse(e.data) as { version: number }).version;
+      if (v !== version || !board?.online) void refresh();
+    };
+    es.onerror = () => set({ online: false });
+    // safety net in case an event is ever missed
+    setInterval(() => void refresh(), 30000);
+    return;
+  }
+  let lastSeen = version;
+  const poll = async () => {
+    // background admin tabs don't need to poll; the TV is always visible
+    if (!document.hidden) {
+      try {
+        const r = await fetch("/api/version", { cache: "no-store" });
+        if (!r.ok) throw new Error();
+        const v = ((await r.json()) as { version: number }).version;
+        if (v !== lastSeen || !board?.online) {
+          lastSeen = v;
+          await refresh();
+        }
+      } catch {
+        set({ online: false });
+      }
+    }
+    setTimeout(poll, s.ms);
+  };
+  setTimeout(poll, s.ms);
+  document.addEventListener("visibilitychange", () => !document.hidden && void refresh());
 }
 
 function start() {
   if (started || typeof window === "undefined") return;
   started = true;
   void refresh();
-  const es = new EventSource("/api/events");
-  es.onmessage = (e) => {
-    const v = (JSON.parse(e.data) as { version: number }).version;
-    if (v !== version || !board?.online) void refresh();
-  };
-  es.onerror = () => set({ online: false });
-  // safety net in case an event is ever missed
-  setInterval(() => void refresh(), 30000);
+}
+
+export function useSetupError(): string | null {
+  return useSyncExternalStore(
+    (cb) => {
+      setupListeners.add(cb);
+      start();
+      return () => setupListeners.delete(cb);
+    },
+    () => setupError,
+    () => null,
+  );
 }
 
 function subscribe(cb: () => void) {
@@ -210,14 +268,24 @@ export async function uploadPhoto(dataUrl: string): Promise<string> {
   return ((await r.json()) as { url: string }).url;
 }
 
+/** Uploads a document in small pieces, so large scans fit hosting request limits. */
 export async function uploadFile(file: File): Promise<{ id: string; name: string }> {
   const r = await fetch("/api/files", {
     method: "POST",
-    headers: { "Content-Type": file.type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name), ...auth() },
-    body: file,
+    headers: { "Content-Type": "application/json", ...auth() },
+    body: JSON.stringify({ name: file.name, type: file.type, size: file.size }),
   });
   if (!r.ok) throw new Error(await readError(r));
-  return (await r.json()) as { id: string; name: string };
+  const { id, name, parts, partBytes } = (await r.json()) as { id: string; name: string; parts: number; partBytes: number };
+  for (let i = 0; i < parts; i++) {
+    const p = await fetch(`/api/files/${id}?part=${i}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", ...auth() },
+      body: file.slice(i * partBytes, (i + 1) * partBytes),
+    });
+    if (!p.ok) throw new Error(await readError(p));
+  }
+  return { id, name };
 }
 
 /** Opens a private driver document in a new tab (fetched with the admin PIN). */

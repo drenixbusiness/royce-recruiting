@@ -436,3 +436,7 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-
 .doc-file:hover { background: var(--accent-200); }
 .doc-error { font-size: 12px; font-weight: 700; color: oklch(.5 .17 25); max-width: 200px; }
 .keypad button:disabled { opacity: .5; cursor: default; }
+.setup-card { max-width: 520px; margin: 16px; text-align: left; color: var(--text); }
+.setup-card h2 { font-size: 28px; margin-bottom: 10px; }
+.setup-card p { margin: 0 0 8px; font-weight: 600; line-height: 1.5; }
+.setup-card .setup-hint { color: var(--neutral-600); font-size: 14px; margin: 0; }

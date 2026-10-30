@@ -1,128 +1,149 @@
 import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
-import fs from "fs/promises";
-import path from "path";
 import type { AppState } from "../types";
 import { DEFAULT_SETTINGS, makeSeed } from "../seed";
+import { getKV, isServerless } from "./kv";
 
-export const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-export const PHOTO_DIR = path.join(DATA_DIR, "photos");
-export const FILE_DIR = path.join(DATA_DIR, "files");
-const DB_FILE = path.join(DATA_DIR, "db.json");
+const BOARD = "royce:board";
+const VERSION = "royce:version";
+const UPLOADS = "royce:uploads";
+const up = (id: string, part?: number) => (part === undefined ? `royce:up:${id}:meta` : `royce:up:${id}:${part}`);
 
-interface Stored {
+/** raw bytes per stored chunk; base64 keeps each Redis value under ~700 KB */
+export const PART_BYTES = 512 * 1024;
+
+export interface Stored {
   state: AppState;
   version: number;
   /** true until the first admin write; lets an old browser-only board be imported once */
   pristine: boolean;
 }
 
-// keep one instance across dev hot reloads
-const g = globalThis as unknown as { __royceDb?: { data: Stored | null; lock: Promise<unknown>; events: EventEmitter } };
-const db = (g.__royceDb ??= { data: null, lock: Promise.resolve(), events: new EventEmitter() });
-db.events.setMaxListeners(0);
+// change notifications for open screens served by this same process (local server)
+const g = globalThis as unknown as { __royceEvents?: EventEmitter };
+export const events = (g.__royceEvents ??= new EventEmitter());
+events.setMaxListeners(0);
 
-export const events = db.events;
+/** How screens learn about changes: pushed (one long-running server) or polled (Vercel). */
+export const syncMode = (): { mode: "sse" } | { mode: "poll"; ms: number } =>
+  isServerless ? { mode: "poll", ms: Math.max(1000, Number(process.env.SYNC_POLL_MS) || 3000) } : { mode: "sse" };
 
-async function ensureDirs() {
-  await fs.mkdir(PHOTO_DIR, { recursive: true });
-  await fs.mkdir(FILE_DIR, { recursive: true });
-}
-
-async function writeAtomic(file: string, data: string) {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, data, "utf8");
-  await fs.rename(tmp, file);
-}
-
-async function load(): Promise<Stored> {
-  if (db.data) return db.data;
-  await ensureDirs();
-  try {
-    const parsed = JSON.parse(await fs.readFile(DB_FILE, "utf8")) as Stored;
-    parsed.state.settings = { ...DEFAULT_SETTINGS, ...parsed.state.settings };
-    db.data = parsed;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    db.data = { state: makeSeed(), version: 1, pristine: true };
-    await writeAtomic(DB_FILE, JSON.stringify(db.data));
+export async function getStored(): Promise<Stored> {
+  const kv = await getKV();
+  const raw = await kv.get(BOARD);
+  if (raw) {
+    const s = JSON.parse(raw) as Stored;
+    s.state.settings = { ...DEFAULT_SETTINGS, ...s.state.settings };
+    return s;
   }
-  return db.data;
+  const seed: Stored = { state: makeSeed(), version: 1, pristine: true };
+  // two first requests at once must not both seed
+  if (await kv.setIfAbsent(BOARD, JSON.stringify(seed))) {
+    await kv.set(VERSION, "1");
+    return seed;
+  }
+  return getStored();
 }
 
-/** Runs writes one at a time so concurrent requests can't interleave. */
-function serial<T>(fn: () => Promise<T>): Promise<T> {
-  const run = db.lock.then(fn, fn);
-  db.lock = run.catch(() => undefined);
-  return run;
+export async function getVersion() {
+  const kv = await getKV();
+  const v = Number(await kv.get(VERSION));
+  return v || (await getStored()).version;
 }
 
-export async function getStored() {
-  return load();
+export async function saveState(next: AppState): Promise<Stored> {
+  const kv = await getKV();
+  const version = await kv.incr(VERSION);
+  const stored: Stored = { state: { ...next, updatedAt: Date.now() }, version, pristine: false };
+  await kv.set(BOARD, JSON.stringify(stored));
+  events.emit("change", version);
+  await removeOrphans(stored.state).catch((e) => console.error("orphan cleanup failed", e));
+  return stored;
 }
 
-export function saveState(next: AppState) {
-  return serial(async () => {
-    const cur = await load();
-    const stored: Stored = { state: { ...next, updatedAt: Date.now() }, version: cur.version + 1, pristine: false };
-    await writeAtomic(DB_FILE, JSON.stringify(stored));
-    db.data = stored;
-    events.emit("change", stored.version);
-    void removeOrphans(stored.state);
-    return stored;
-  });
+/* ---------- uploads (truck photos, driver documents) ---------- */
+
+export interface UploadMeta {
+  kind: "photo" | "file";
+  name: string;
+  type: string;
+  size: number;
+  parts: number;
+  createdAt: number;
+}
+
+export const isId = (id: string) => /^[a-f0-9-]{36}$/.test(id);
+
+export async function createUpload(kind: UploadMeta["kind"], name: string, type: string, size: number) {
+  const kv = await getKV();
+  const id = randomUUID();
+  const meta: UploadMeta = { kind, name, type, size, parts: Math.max(1, Math.ceil(size / PART_BYTES)), createdAt: Date.now() };
+  await kv.set(up(id), JSON.stringify(meta));
+  await kv.hset(UPLOADS, id, String(meta.createdAt));
+  return { id, meta };
+}
+
+export async function getUploadMeta(id: string) {
+  const raw = await (await getKV()).get(up(id));
+  return raw ? (JSON.parse(raw) as UploadMeta) : null;
+}
+
+export async function putPart(id: string, part: number, bytes: Buffer) {
+  await (await getKV()).set(up(id, part), bytes.toString("base64"));
+}
+
+/** Returns the whole upload, or null if it is missing or was never completed. */
+export async function readUpload(id: string) {
+  const meta = await getUploadMeta(id);
+  if (!meta) return null;
+  const kv = await getKV();
+  const chunks: Buffer[] = [];
+  for (let i = 0; i < meta.parts; i++) {
+    const b64 = await kv.get(up(id, i));
+    if (b64 === null) return null;
+    chunks.push(Buffer.from(b64, "base64"));
+  }
+  return { meta, bytes: Buffer.concat(chunks) };
+}
+
+async function storeBytes(kind: UploadMeta["kind"], name: string, type: string, bytes: Buffer) {
+  const { id, meta } = await createUpload(kind, name, type, bytes.length);
+  for (let i = 0; i < meta.parts; i++) await putPart(id, i, bytes.subarray(i * PART_BYTES, (i + 1) * PART_BYTES));
+  return id;
+}
+
+export async function savePhoto(bytes: Buffer) {
+  const id = await storeBytes("photo", "photo.jpg", "image/jpeg", bytes);
+  return `/api/photos/${id}`;
+}
+
+async function deleteUpload(id: string) {
+  const kv = await getKV();
+  const meta = await getUploadMeta(id);
+  const keys = [up(id), ...Array.from({ length: meta?.parts ?? 0 }, (_, i) => up(id, i))];
+  await kv.del(...keys);
+  await kv.hdel(UPLOADS, id);
 }
 
 const ORPHAN_GRACE_MS = 60 * 60 * 1000;
 
 /** Deletes uploads nothing points to any more (older than an hour, so open dialogs keep theirs). */
 async function removeOrphans(state: AppState) {
-  const photos = new Set(state.trucks.map((t) => t.photo?.split("/").pop()).filter(Boolean));
-  const files = new Set(state.drivers.flatMap((d) => Object.values(d.docs).map((x) => x.fileId)).filter(Boolean));
-  for (const [dir, keep] of [[PHOTO_DIR, photos], [FILE_DIR, files]] as const) {
-    try {
-      for (const name of await fs.readdir(dir)) {
-        if (keep.has(name.split(".")[0]) || keep.has(name)) continue;
-        const full = path.join(dir, name);
-        const { mtimeMs } = await fs.stat(full);
-        if (Date.now() - mtimeMs > ORPHAN_GRACE_MS) await fs.unlink(full);
-      }
-    } catch (e) {
-      console.error("orphan cleanup failed", e);
-    }
+  const used = new Set<string>();
+  state.trucks.forEach((t) => t.photo && used.add(t.photo.split("/").pop()!.replace(/\.jpg$/, "")));
+  state.drivers.forEach((d) => Object.values(d.docs).forEach((x) => x.fileId && used.add(x.fileId)));
+  const index = await (await getKV()).hgetall(UPLOADS);
+  for (const [id, created] of Object.entries(index)) {
+    if (!used.has(id) && Date.now() - Number(created) > ORPHAN_GRACE_MS) await deleteUpload(id);
   }
 }
 
-export const isId = (id: string) => /^[a-f0-9-]{36}(\.jpg)?$/.test(id);
-
-export async function savePhoto(bytes: Buffer) {
-  await ensureDirs();
-  const id = randomUUID();
-  await fs.writeFile(path.join(PHOTO_DIR, `${id}.jpg`), bytes);
-  return `/api/photos/${id}.jpg`;
-}
-
-export async function saveFile(bytes: Buffer, name: string) {
-  await ensureDirs();
-  const id = randomUUID();
-  await fs.writeFile(path.join(FILE_DIR, id), bytes);
-  await fs.writeFile(path.join(FILE_DIR, `${id}.json`), JSON.stringify({ name }));
-  return id;
-}
-
-export async function readFileMeta(id: string) {
-  const meta = JSON.parse(await fs.readFile(path.join(FILE_DIR, `${id}.json`), "utf8")) as { name: string };
-  return { ...meta, bytes: await fs.readFile(path.join(FILE_DIR, id)) };
-}
-
-/** Converts photos stored inline as data URLs (old browser-only boards) into files. */
+/** Converts photos stored inline as data URLs (old browser-only boards) into uploads. */
 export async function externalizePhotos(state: AppState): Promise<AppState> {
-  const trucks = await Promise.all(
-    state.trucks.map(async (t) => {
-      if (!t.photo?.startsWith("data:")) return t;
-      const b64 = t.photo.split(",")[1] ?? "";
-      return { ...t, photo: await savePhoto(Buffer.from(b64, "base64")) };
-    }),
-  );
+  const trucks = [];
+  for (const t of state.trucks) {
+    if (!t.photo?.startsWith("data:")) trucks.push(t);
+    else trucks.push({ ...t, photo: await savePhoto(Buffer.from(t.photo.split(",")[1] ?? "", "base64")) });
+  }
   return { ...state, trucks };
 }

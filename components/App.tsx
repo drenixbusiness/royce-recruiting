@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Monitor, Settings2, WifiOff } from "lucide-react";
-import { useBoard } from "@/lib/store";
+import { useBoard, useSetupError } from "@/lib/store";
 import { themeCss } from "@/lib/theme";
 import TV from "./TV";
 import Admin from "./admin/Admin";
@@ -12,6 +12,7 @@ type View = "tv" | "admin";
 /** Renders the TV or Admin view; without `view` (the root URL) it forwards to the configured start view. */
 export default function App({ view }: { view?: View }) {
   const board = useBoard();
+  const setupError = useSetupError();
   const router = useRouter();
   const state = board?.state;
 
@@ -21,6 +22,21 @@ export default function App({ view }: { view?: View }) {
     const h = window.location.hash.replace("#", "");
     router.replace(h === "tv" || h === "admin" ? `/${h}` : `/${state.settings.startView}`);
   }, [state, view, router]);
+
+  if (setupError && !board) {
+    return (
+      <>
+        <style>{`:root{${themeCss("dusk", false)}}`}</style>
+        <div className="connecting">
+          <div className="card setup-card">
+            <h2>Database not connected</h2>
+            <p>{setupError}</p>
+            <p className="setup-hint">This page retries on its own every few seconds.</p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (!board || !state || !view) {
     return (

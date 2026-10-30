@@ -1,13 +1,11 @@
 import type { AppState } from "../types";
-import { getStored } from "./db";
+import type { Stored } from "./db";
 
 export const PIN_HEADER = "x-admin-pin";
 
-export async function isAdmin(req: Request) {
+export function isAdmin(req: Request, stored: Stored) {
   const pin = req.headers.get(PIN_HEADER);
-  if (!pin) return false;
-  const { state } = await getStored();
-  return pin === state.settings.pin;
+  return !!pin && pin === stored.state.settings.pin;
 }
 
 export const unauthorized = () => Response.json({ error: "Admin PIN required" }, { status: 401 });
