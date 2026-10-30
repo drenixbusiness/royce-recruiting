@@ -48,10 +48,18 @@ function layoutGrid(n: number, areaH: number) {
 
 function Ticket({ t }: { t: Truck }) {
   const label = openLabel(t);
+  const badge = <span className={`ticket-badge ${label === "New today" ? "new" : ""}`}>{label}</span>;
   return (
-    <div className="ticket">
+    <div className={`ticket ${t.photo ? "has-photo" : ""}`}>
       <div className="ticket-top">
-        <div className="ticket-blob" />
+        {t.photo ? (
+          <>
+            <img className="photo ticket-bg" src={t.photo} alt="" />
+            <span className="ticket-scrim" />
+          </>
+        ) : (
+          <div className="ticket-blob" />
+        )}
         <div className="ticket-info">
           <span className="ticket-crew">{t.crew}</span>
           <div className="ticket-num trunc">{t.number}</div>
@@ -63,12 +71,16 @@ function Ticket({ t }: { t: Truck }) {
             <span className="trunc">{t.location}</span>
           </div>
         </div>
-        <div className="ticket-photo-wrap">
-          <div className="ticket-photo">
-            {t.photo ? <img className="photo" src={t.photo} alt="" /> : <TruckIcon size="2.8em" strokeWidth={2.75} />}
+        {t.photo ? (
+          <div className="ticket-corner">{badge}</div>
+        ) : (
+          <div className="ticket-photo-wrap">
+            <div className="ticket-photo">
+              <TruckIcon size="2.8em" strokeWidth={2.75} />
+            </div>
+            {badge}
           </div>
-          <span className={`ticket-badge ${label === "New today" ? "new" : ""}`}>{label}</span>
-        </div>
+        )}
       </div>
       <div className="ticket-tear">
         <span className="ticket-notch l" />

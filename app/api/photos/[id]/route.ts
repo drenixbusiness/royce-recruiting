@@ -9,6 +9,7 @@ export const GET = handle(async (_req: Request, { params }: { params: Promise<{ 
   const found = isId(id) ? await readUpload(id) : null;
   if (!found || found.meta.kind !== "photo") return new Response("Not found", { status: 404 });
   return new Response(new Uint8Array(found.bytes), {
-    headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=31536000, immutable" },
+    // s-maxage lets the Vercel CDN keep it too, so each photo is read from the database only once
+    headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable" },
   });
 });
