@@ -17,6 +17,8 @@ export interface Truck {
   driverName: string;
   /** needs a driver urgently: listed first on the TV and highlighted; cleared once the truck is covered */
   asap?: boolean;
+  /** HR person recruiting for this truck, shown on the TV ticket */
+  recruiter?: string;
 }
 
 export type StageId = "contacted" | "application" | "documents" | "approved" | "ready";

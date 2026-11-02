@@ -37,7 +37,7 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
     if (Object.keys(err).length) return;
     const linked = driverId && driverId !== OTHER ? driverId : null;
     saveTruck(
-      { ...t, number: t.number.trim(), model: t.model.trim(), location: t.location.trim(), payRate: t.payRate.trim(), driverName: driverId ? t.driverName.trim() : "" },
+      { ...t, number: t.number.trim(), model: t.model.trim(), location: t.location.trim(), payRate: t.payRate.trim(), recruiter: t.recruiter?.trim() ?? "", driverName: driverId ? t.driverName.trim() : "" },
       linked,
     );
     onClose();
@@ -92,6 +92,11 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
           </Field>
           <Field label="Pay structure" group>
             <Select<PayStructure> value={t.payStructure} onChange={(v) => set("payStructure", v)} options={PAY.map((p) => ({ value: p, label: p }))} />
+          </Field>
+        </div>
+        <div className="grid3" style={{ marginTop: 14 }}>
+          <Field label="HR (recruiter)">
+            <input className="input" value={t.recruiter ?? ""} onChange={(e) => set("recruiter", e.target.value)} placeholder="Simon" />
           </Field>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginTop: 16 }}>

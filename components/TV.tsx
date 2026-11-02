@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { MapPin, Quote as QuoteIcon, Truck as TruckIcon, Zap } from "lucide-react";
+import { MapPin, Quote as QuoteIcon, Truck as TruckIcon, UserRound, Zap } from "lucide-react";
 import type { AppState, Truck } from "@/lib/types";
 import { STAGES, driverFlags, openLabel, pipeline, sortOpen, totals, tvName } from "@/lib/logic";
 
@@ -77,6 +77,12 @@ function Ticket({ t }: { t: Truck }) {
             <MapPin size="1em" strokeWidth={2.75} style={{ flex: "none" }} />
             <span className="trunc">{t.location}</span>
           </div>
+          {t.recruiter && (
+            <div className="ticket-hr">
+              <UserRound size="1em" strokeWidth={2.75} style={{ flex: "none" }} />
+              <span className="trunc">HR: {t.recruiter}</span>
+            </div>
+          )}
         </div>
         {t.photo ? (
           <div className="ticket-corner">{badge}</div>

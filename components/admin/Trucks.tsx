@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { MapPin, Pencil, Plus, RefreshCw, Truck as TruckIcon, Wallet, Zap } from "lucide-react";
+import { MapPin, Pencil, Plus, RefreshCw, Truck as TruckIcon, UserRound, Wallet, Zap } from "lucide-react";
 import type { AppState, Truck, TruckStatus } from "@/lib/types";
 import { STATUS_LABEL, daysSince } from "@/lib/logic";
 import { cycleStatus, toggleAsap } from "@/lib/actions";
@@ -77,6 +77,11 @@ export default function Trucks({ state, openTruck }: { state: AppState; openTruc
                 <div className="meta">
                   <Wallet size={14} strokeWidth={SW} /> <span className="trunc">{t.payRate} · {t.payStructure}</span>
                 </div>
+                {t.recruiter && (
+                  <div className="meta">
+                    <UserRound size={14} strokeWidth={SW} /> <span className="trunc">HR: {t.recruiter}</span>
+                  </div>
+                )}
                 <div className="meta" style={{ fontWeight: 700 }}>
                   <span className="trunc">{line}</span>
                 </div>
