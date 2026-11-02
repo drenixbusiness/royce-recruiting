@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { ImagePlus, Truck as TruckIcon, X } from "lucide-react";
+import { ImagePlus, Truck as TruckIcon, X, Zap } from "lucide-react";
 import type { AppState, Crew, PayStructure, Truck, TruckStatus } from "@/lib/types";
 import { resizePhoto, stageLabel } from "@/lib/logic";
 import { deleteTruck, saveTruck } from "@/lib/actions";
@@ -111,6 +111,19 @@ export default function TruckDialog({ state, truck, onClose }: { state: AppState
               ]}
             />
           </div>
+          {t.status === "available" && (
+            <div className="field">
+              <span>Priority</span>
+              <Seg<"normal" | "asap">
+                value={t.asap ? "asap" : "normal"}
+                onChange={(v) => set("asap", v === "asap")}
+                options={[
+                  { value: "normal", label: "Normal" },
+                  { value: "asap", label: <span className="asap-opt"><Zap size={14} strokeWidth={SW} /> ASAP</span> },
+                ]}
+              />
+            </div>
+          )}
         </div>
         {t.status !== "available" && (
           <div className="grid2" style={{ marginTop: 16 }}>

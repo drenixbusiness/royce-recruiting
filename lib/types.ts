@@ -15,6 +15,8 @@ export interface Truck {
   photo: string | null;
   openedAt: string;
   driverName: string;
+  /** needs a driver urgently: listed first on the TV and highlighted; cleared once the truck is covered */
+  asap?: boolean;
 }
 
 export type StageId = "contacted" | "application" | "documents" | "approved" | "ready";

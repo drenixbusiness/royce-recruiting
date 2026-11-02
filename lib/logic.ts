@@ -75,8 +75,11 @@ export function driverFlags(d: Driver, s: Settings): Flag[] {
 
 export const pipeline = (s: AppState) => s.drivers.filter((d) => !d.truckId);
 
+/** Open trucks, ASAP ones first, then longest-open first. */
 export const sortOpen = (trucks: Truck[]) =>
-  trucks.filter((t) => t.status === "available").sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+  trucks
+    .filter((t) => t.status === "available")
+    .sort((a, b) => Number(!!b.asap) - Number(!!a.asap) || a.openedAt.localeCompare(b.openedAt));
 
 export function totals(s: AppState) {
   const pipe = pipeline(s);

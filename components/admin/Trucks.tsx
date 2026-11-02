@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import { MapPin, Pencil, Plus, RefreshCw, Truck as TruckIcon, Wallet } from "lucide-react";
+import { MapPin, Pencil, Plus, RefreshCw, Truck as TruckIcon, Wallet, Zap } from "lucide-react";
 import type { AppState, Truck, TruckStatus } from "@/lib/types";
 import { STATUS_LABEL, daysSince } from "@/lib/logic";
-import { cycleStatus } from "@/lib/actions";
+import { cycleStatus, toggleAsap } from "@/lib/actions";
 import { Seg, SW } from "./ui";
 
 type Filter = "all" | TruckStatus;
@@ -15,14 +15,17 @@ export default function Trucks({ state, openTruck }: { state: AppState; openTruc
   const count = (f: Filter) => (f === "all" ? state.trucks.length : state.trucks.filter((t) => t.status === f).length);
   const list = state.trucks
     .filter((t) => filter === "all" || t.status === filter)
-    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
+    .sort((a, b) => Number(!!b.asap) - Number(!!a.asap) || a.number.localeCompare(b.number, undefined, { numeric: true }));
+  const asapCount = state.trucks.filter((t) => t.asap && t.status === "available").length;
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Trucks</h1>
-          <div className="sub">{count("available")} open · {state.trucks.length} total</div>
+          <div className="sub">
+            {count("available")} open{asapCount > 0 && <> · <span className="asap-text">{asapCount} ASAP</span></>} · {state.trucks.length} total
+          </div>
         </div>
         <div className="actions">
           <button className="btn primary" onClick={() => openTruck("new")}>
@@ -50,10 +53,15 @@ export default function Trucks({ state, openTruck }: { state: AppState; openTruc
                 ? `Reserved for ${t.driverName || "—"}`
                 : `Driver: ${t.driverName || "—"}`;
           return (
-            <div key={t.id} className="truck-card">
+            <div key={t.id} className={`truck-card ${t.asap && t.status === "available" ? "asap" : ""}`}>
               <div className="ph">
                 {t.photo ? <img className="photo" src={t.photo} alt="" /> : <TruckIcon size={56} strokeWidth={SW} />}
                 <span className={`tag ${STATUS_TAG[t.status]}`}>{STATUS_LABEL[t.status]}</span>
+                {t.asap && t.status === "available" && (
+                  <span className="tag asap-tag">
+                    <Zap size={12} strokeWidth={SW} /> ASAP
+                  </span>
+                )}
               </div>
               <div className="body">
                 <div className="num">
@@ -79,6 +87,16 @@ export default function Trucks({ state, openTruck }: { state: AppState; openTruc
                   <button className="btn sm alt" onClick={() => cycleStatus(t.id)}>
                     <RefreshCw size={14} strokeWidth={SW} /> {NEXT_LABEL[t.status]}
                   </button>
+                  {t.status === "available" && (
+                    <button
+                      className={`btn sm icon asap-toggle ${t.asap ? "on" : ""}`}
+                      onClick={() => toggleAsap(t.id)}
+                      title={t.asap ? "Remove ASAP" : "Mark as ASAP"}
+                      aria-pressed={!!t.asap}
+                    >
+                      <Zap size={14} strokeWidth={SW} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

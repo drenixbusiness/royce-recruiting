@@ -37,7 +37,7 @@ export function assign(driverId: string, truckId: string) {
     if (!driver) return s;
     return {
       ...s,
-      trucks: s.trucks.map((t) => (t.id === truckId ? { ...t, status: "reserved" as const, driverName: driver.name } : t)),
+      trucks: s.trucks.map((t) => (t.id === truckId ? { ...t, status: "reserved" as const, driverName: driver.name, asap: false } : t)),
       drivers: s.drivers.map((d) => (d.id === driverId ? { ...d, truckId, lastActivity: now() } : d)),
     };
   });
@@ -50,7 +50,8 @@ export function cycleStatus(id: string) {
     const t = s.trucks.find((x) => x.id === id);
     if (!t) return s;
     const status = NEXT[t.status];
-    if (status !== "available") return { ...s, trucks: s.trucks.map((x) => (x.id === id ? { ...x, status } : x)) };
+    // a covered truck no longer needs a driver, so ASAP ends there
+    if (status !== "available") return { ...s, trucks: s.trucks.map((x) => (x.id === id ? { ...x, status, asap: false } : x)) };
     return {
       ...s,
       trucks: s.trucks.map((x) => (x.id === id ? { ...x, status, openedAt: now(), driverName: "" } : x)),
@@ -70,7 +71,7 @@ export function saveTruck(t: Truck, driverId: string | null = null) {
       drivers = drivers.map((d) => (d.truckId === t.id ? { ...d, truckId: null } : d));
     } else {
       const linked = drivers.find((d) => d.id === driverId);
-      if (linked) truck = { ...t, driverName: linked.name };
+      truck = { ...t, asap: false, ...(linked ? { driverName: linked.name } : {}) };
       drivers = drivers.map((d) => {
         if (d.id === driverId) return { ...d, truckId: t.id, lastActivity: d.truckId === t.id ? d.lastActivity : now() };
         return d.truckId === t.id ? { ...d, truckId: null } : d;
@@ -82,6 +83,13 @@ export function saveTruck(t: Truck, driverId: string | null = null) {
       trucks: prev ? s.trucks.map((x) => (x.id === t.id ? truck : x)) : [...s.trucks, truck],
     };
   });
+}
+
+export function toggleAsap(id: string) {
+  update((s) => ({
+    ...s,
+    trucks: s.trucks.map((t) => (t.id === id && t.status === "available" ? { ...t, asap: !t.asap } : t)),
+  }));
 }
 
 export function deleteTruck(id: string) {

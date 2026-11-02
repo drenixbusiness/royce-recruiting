@@ -452,3 +452,36 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-
 .setup-card h2 { font-size: 28px; margin-bottom: 10px; }
 .setup-card p { margin: 0 0 8px; font-weight: 600; line-height: 1.5; }
 .setup-card .setup-hint { color: var(--neutral-600); font-size: 14px; margin: 0; }
+
+/* ---------- ASAP trucks (need a driver urgently) ---------- */
+:root { --asap: oklch(.72 .18 45); --asap-ink: oklch(.24 .07 35); --asap-glow: oklch(.72 .18 45 / .6); }
+.ticket-tags { display: flex; align-items: center; gap: .4em; align-self: flex-start; }
+.ticket-asap {
+  display: inline-flex; align-items: center; gap: .3em; font-size: .82em; font-weight: 900; letter-spacing: .06em;
+  background: var(--asap); color: var(--asap-ink); padding: .25em .8em; border-radius: 999px; animation: asap-beat 1.4s ease-in-out infinite;
+}
+.ticket.asap { animation: asap-glow 1.8s ease-in-out infinite; }
+.ticket.asap .ticket-strip { background: oklch(.42 .13 38); color: oklch(.96 .03 70); }
+@keyframes asap-glow {
+  0%, 100% { box-shadow: 0 0 0 .22em var(--asap), 0 0 .6em .05em var(--asap-glow); }
+  50% { box-shadow: 0 0 0 .22em var(--asap), 0 0 1.7em .45em var(--asap-glow); }
+}
+@keyframes asap-beat { 50% { transform: scale(1.08); } }
+.asap-pill {
+  display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; padding: 10px 22px; border-radius: 999px;
+  background: var(--asap); color: var(--asap-ink); font-size: 22px; font-weight: 800; animation: asap-beat 1.4s ease-in-out infinite;
+}
+.ring-dot.asap { animation: asap-dot 1.4s ease-in-out infinite; }
+@keyframes asap-dot { 50% { transform: translate(-50%, -50%) scale(1.3); } }
+
+/* admin */
+.truck-card.asap { box-shadow: 0 0 0 3px var(--asap); }
+.truck-card .ph .tag.asap-tag { left: auto; right: 12px; background: var(--asap); color: var(--asap-ink); }
+.btn.asap-toggle.on { background: var(--asap); color: var(--asap-ink); }
+.asap-text { color: oklch(.55 .17 40); font-weight: 800; }
+.asap-opt { display: inline-flex; align-items: center; gap: 5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket.asap, .ticket-asap, .asap-pill, .ring-dot.asap { animation: none; }
+  .ticket.asap { box-shadow: 0 0 0 .22em var(--asap), 0 0 1.2em .3em var(--asap-glow); }
+}

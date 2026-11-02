@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { MapPin, Quote as QuoteIcon, Truck as TruckIcon } from "lucide-react";
+import { MapPin, Quote as QuoteIcon, Truck as TruckIcon, Zap } from "lucide-react";
 import type { AppState, Truck } from "@/lib/types";
 import { STAGES, driverFlags, openLabel, pipeline, sortOpen, totals, tvName } from "@/lib/logic";
 
@@ -50,7 +50,7 @@ function Ticket({ t }: { t: Truck }) {
   const label = openLabel(t);
   const badge = <span className={`ticket-badge ${label === "New today" ? "new" : ""}`}>{label}</span>;
   return (
-    <div className={`ticket ${t.photo ? "has-photo" : ""}`}>
+    <div className={`ticket ${t.photo ? "has-photo" : ""} ${t.asap ? "asap" : ""}`}>
       <div className="ticket-top">
         {t.photo ? (
           <>
@@ -61,7 +61,14 @@ function Ticket({ t }: { t: Truck }) {
           <div className="ticket-blob" />
         )}
         <div className="ticket-info">
-          <span className="ticket-crew">{t.crew}</span>
+          <span className="ticket-tags">
+            {t.asap && (
+              <span className="ticket-asap">
+                <Zap size="1em" strokeWidth={2.75} fill="currentColor" /> ASAP
+              </span>
+            )}
+            <span className="ticket-crew">{t.crew}</span>
+          </span>
           <div className="ticket-num trunc">{t.number}</div>
           <div className="ticket-model trunc">
             {t.year} {t.model}
@@ -97,7 +104,7 @@ function Ticket({ t }: { t: Truck }) {
 function CoverageRing({ state }: { state: AppState }) {
   const tot = totals(state);
   const order = { available: 0, reserved: 1, in_service: 2 } as const;
-  const trucks = [...state.trucks].sort((a, b) => order[a.status] - order[b.status]);
+  const trucks = [...state.trucks].sort((a, b) => order[a.status] - order[b.status] || Number(!!b.asap) - Number(!!a.asap));
   const n = Math.max(trucks.length, 1);
   const R = 138;
   const size = Math.max(10, Math.min(30, ((2 * Math.PI * R) / n) * 0.62));
@@ -112,10 +119,10 @@ function CoverageRing({ state }: { state: AppState }) {
             width: size,
             height: size,
           };
-          if (t.status === "available") Object.assign(style, { border: `${Math.max(3, size / 6)}px solid var(--ring)` });
+          if (t.status === "available") Object.assign(style, { border: `${Math.max(3, size / 6)}px solid ${t.asap ? "var(--asap)" : "var(--ring)"}` });
           else if (t.status === "reserved") style.background = "var(--neutral-400)";
           else style.background = "var(--ok)";
-          return <span key={t.id} className="ring-dot" style={style} />;
+          return <span key={t.id} className={`ring-dot ${t.asap && t.status === "available" ? "asap" : ""}`} style={style} />;
         })}
         <div className="ring-center">
           <div className="lbl">Trucks to cover</div>
@@ -243,6 +250,7 @@ export default function TV({ state }: { state: AppState }) {
   const dark = state.settings.tvTheme === "dark";
   const showQuotes = state.settings.showQuotes;
   const open = useMemo(() => sortOpen(state.trucks), [state.trucks]);
+  const asapCount = open.filter((t) => t.asap).length;
 
   // canvas 1080 − padding 72 − header 92 − gap 24 − title 64 − gap 22 (− footer 96 − gap 24)
   const gridH = 1080 - 72 - 116 - 86 - (showQuotes ? 120 : 0);
@@ -287,6 +295,11 @@ export default function TV({ state }: { state: AppState }) {
             <div className="tv-title">
               <span className="count-pill">{open.length}</span>
               <h2>Available trucks</h2>
+              {asapCount > 0 && (
+                <span className="asap-pill">
+                  <Zap size={24} strokeWidth={2.75} fill="currentColor" /> {asapCount} need a driver ASAP
+                </span>
+              )}
             </div>
             {open.length === 0 ? (
               <div className="tv-empty">
